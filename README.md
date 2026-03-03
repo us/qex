@@ -1,12 +1,25 @@
-# qex
+# QEX
 
-A lightweight, high-performance MCP server for semantic code search. Combines BM25 full-text search with optional dense vector embeddings for hybrid retrieval — delivering Cursor-quality search from a single ~19 MB binary.
+**Lightweight MCP server for semantic code search — BM25 + optional dense vectors + tree-sitter chunking**
 
-[中文文档](README.zh-CN.md)
+QEX is a high-performance MCP server for semantic code search built in Rust. It combines BM25 full-text search with optional dense vector embeddings for hybrid retrieval — delivering Cursor-quality search from a single ~19 MB binary. Tree-sitter parsing understands code structure (functions, classes, methods), Merkle DAG change detection enables incremental indexing, and everything runs locally with zero cloud dependencies.
 
-## Why?
+**English** | [中文](README.zh-CN.md)
 
-Claude Code uses grep + glob for code search — effective but token-hungry and lacks semantic understanding. Cursor uses vector embeddings with cloud indexing (~3.5 GB stack). **qex** is the middle ground:
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2021_edition-orange.svg)](https://www.rust-lang.org/)
+
+## What's New
+
+- **Hybrid Search** — BM25 + dense vector search with Reciprocal Rank Fusion for 48% better accuracy than dense-only retrieval
+- **10 Language Support** — Python, JavaScript, TypeScript, Rust, Go, Java, C, C++, C#, Markdown via tree-sitter
+- **Incremental Indexing** — Merkle DAG change detection, only re-indexes what changed
+- **Optional Dense Vectors** — snowflake-arctic-embed-s (33 MB, 384-dim, INT8 quantized) via ONNX Runtime
+- **MCP Native** — plugs directly into Claude Code as a tool server via stdio
+
+## Why QEX?
+
+Claude Code uses grep + glob for code search — effective but token-hungry and lacks semantic understanding. Cursor uses vector embeddings with cloud indexing (~3.5 GB stack). **QEX** is the middle ground:
 
 - **BM25 + Dense Hybrid**: 48% better accuracy than dense-only retrieval ([Superlinked 2025](https://superlinked.com/vectorhub/articles/optimizing-rag-with-hybrid-search-reranking))
 - **Tree-sitter Chunking**: Understands code structure — functions, classes, methods — not just lines

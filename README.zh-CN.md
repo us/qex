@@ -1,12 +1,25 @@
-# qex
+# QEX
 
-一个轻量级、高性能的 MCP 服务器，用于语义化代码搜索。将 BM25 全文检索与可选的稠密向量嵌入相结合，实现混合检索 —— 仅需一个约 19 MB 的二进制文件，即可提供媲美 Cursor 的搜索质量。
+**轻量级 MCP 服务器，用于语义化代码搜索 —— BM25 + 可选稠密向量 + tree-sitter 代码分块**
 
-[English](README.md)
+QEX 是一个用 Rust 构建的高性能 MCP 语义代码搜索服务器。将 BM25 全文检索与可选的稠密向量嵌入相结合，实现混合检索 —— 仅需一个约 19 MB 的二进制文件，即可提供媲美 Cursor 的搜索质量。Tree-sitter 解析理解代码结构（函数、类、方法），Merkle DAG 变更检测支持增量索引，一切在本地运行，零云端依赖。
 
-## 为什么选择 qex？
+[English](README.md) | **中文**
 
-Claude Code 使用 grep + glob 进行代码搜索 —— 虽然有效，但消耗大量 token 且缺乏语义理解。Cursor 使用向量嵌入配合云端索引（约 3.5 GB）。**qex** 是两者的折中方案：
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-2021_edition-orange.svg)](https://www.rust-lang.org/)
+
+## 最新特性
+
+- **混合搜索** —— BM25 + 稠密向量搜索，通过倒数排名融合（RRF）比纯稠密检索准确率高 48%
+- **10 种语言支持** —— Python、JavaScript、TypeScript、Rust、Go、Java、C、C++、C#、Markdown，基于 tree-sitter
+- **增量索引** —— 基于 Merkle DAG 的变更检测，仅重新索引发生变化的文件
+- **可选稠密向量** —— snowflake-arctic-embed-s（33 MB，384 维，INT8 量化），通过 ONNX Runtime
+- **原生 MCP 支持** —— 通过 stdio 作为工具服务器直接接入 Claude Code
+
+## 为什么选择 QEX？
+
+Claude Code 使用 grep + glob 进行代码搜索 —— 虽然有效，但消耗大量 token 且缺乏语义理解。Cursor 使用向量嵌入配合云端索引（约 3.5 GB）。**QEX** 是两者的折中方案：
 
 - **BM25 + 稠密混合检索**：比纯稠密检索准确率高 48%（[Superlinked 2025](https://superlinked.com/vectorhub/articles/optimizing-rag-with-hybrid-search-reranking)）
 - **Tree-sitter 代码分块**：理解代码结构 —— 函数、类、方法 —— 而非简单的行级别搜索
