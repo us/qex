@@ -3,9 +3,10 @@ members = ["crates/qex-core", "crates/qex-mcp"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 license = "AGPL-3.0"
+repository = "https://github.com/us/qex"
 
 [workspace.dependencies]
 # Core

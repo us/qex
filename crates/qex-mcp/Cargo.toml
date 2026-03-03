@@ -3,13 +3,15 @@ name = "qex-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Lightweight MCP server for semantic code search — BM25 + optional dense vectors + tree-sitter chunking"
 
 [[bin]]
 name = "qex"
 path = "src/main.rs"
 
 [dependencies]
-qex-core = { path = "../qex-core", features = [] }
+qex-core = { path = "../qex-core", version = "0.0.1", features = [] }
 rmcp.workspace = true
 schemars.workspace = true
 tokio.workspace = true
