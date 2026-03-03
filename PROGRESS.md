@@ -1,6 +1,6 @@
 # 📋 Progress Plan: Phase 5 — Polish, Bug Fixes, Optimization & Testing
 
-> Created: 2026-03-03 | Status: 🔄 In Progress | Completed: 0/14
+> Created: 2026-03-03 | Status: ✅ Complete | Completed: 14/14
 
 ## 🎯 Objective
 Phase 4 sonrası dense search entegrasyonundaki bug'ları düzeltmek, performansı
@@ -8,9 +8,9 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 
 ## 📊 Progress Overview
 - Total tasks: 14
-- Completed: 3
-- In Progress: 1
-- Remaining: 10
+- Completed: 14
+- In Progress: 0
+- Remaining: 0
 
 ---
 
@@ -76,16 +76,16 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
   - Details: Document dense feature flag, model download, hybrid search behavior
   - Tests: N/A
 
-- [🔄] **Task 4.3**: Initial git commit
+- [x] **Task 4.3**: Initial git commit (43 files, 9491 lines)
   - Details: Stage all source files, create initial commit with full project
   - Tests: `git log` shows commit, `git status` clean
 
 ### Phase 5: Verification
 
-- [ ] **Task 5.1**: Full test suite — both modes
+- [x] **Task 5.1**: Full test suite — both modes (46 dense + 41 BM25-only, 0 warnings)
   - Tests: `cargo test` (41 pass), `cargo test --features dense` (46 pass), zero warnings
 
-- [ ] **Task 5.2**: Release build verification
+- [x] **Task 5.2**: Release build verification (36MB dense, 19MB BM25-only, MCP server works)
   - Tests: `cargo build --release --features dense`, binary size check, MCP server starts
 
 ---
@@ -93,7 +93,11 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 ## 📝 Notes & Decisions
 | # | Note | Date |
 |---|------|------|
-| - | - | - |
+| 1 | Dense incremental index bug: clear() lost all vectors, fixed with per-file removal | 2026-03-03 |
+| 2 | sanitize_query now whitelist-based (alphanumeric + _-./:) instead of blacklist | 2026-03-03 |
+| 3 | Query parse errors now return empty results instead of crashing | 2026-03-03 |
+| 4 | FastAPI test: 22K chunks indexed, "dependency injection" found semantic matches via dense | 2026-03-03 |
+| 5 | Test files still dominate results on large projects — test penalty 0.7 may need tuning | 2026-03-03 |
 
 ## 🐛 Issues Encountered
 | # | Issue | Status | Resolution |
@@ -101,3 +105,28 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 | - | - | - | - |
 
 ## ➕ Added Tasks (discovered during execution)
+- Fixed special character query crash (discovered during edge case testing)
+
+---
+
+## ✅ Completion Summary
+- **Started**: 2026-03-03
+- **Completed**: 2026-03-03
+- **Total tasks**: 14 (14 original + 0 added)
+- **Issues encountered**: 1 (special char query crash → fixed)
+- **Tests passing**: ✅ All (46 dense, 41 BM25-only, 0 warnings)
+
+### Key Changes Made
+1. `dense.rs`: Added file_to_chunks mapping for per-file vector removal + backward-compatible serialization
+2. `index/mod.rs`: Fixed incremental dense rebuild (remove_file instead of clear), added dense-only BM25 lookup
+3. `bm25.rs`: Added get_by_chunk_ids(), improved sanitize_query (whitelist-based), graceful query parse errors
+4. `tools.rs`: Added #[allow(dead_code)] for DownloadModelParams
+5. `embedding.rs`: Dynamic thread count via available_parallelism()
+6. `dense.rs`: Increased batch size 32→64
+7. `.gitignore`: Added IDE, runtime, model, env entries
+8. `.claude/CLAUDE.md`: Documented dense search feature, deps, conventions
+
+### Remaining TODOs
+- [ ] Test penalty tuning for large projects (0.7 → 0.4 for tests/)
+- [ ] Investigate ort CoreML backend for Apple Silicon acceleration
+- [ ] Profile embedding bottleneck (tokenization vs inference vs mean pooling)
