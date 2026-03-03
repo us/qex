@@ -2,6 +2,9 @@
 
 Lightweight Rust MCP server for semantic code search using BM25 (tantivy) + optional dense vector search (ONNX) + tree-sitter chunking.
 
+- **GitHub**: https://github.com/us/qex
+- **crates.io**: https://crates.io/crates/qex-mcp / https://crates.io/crates/qex-core
+
 ## Architecture
 
 - `crates/qex-core/` - Core library: chunking, merkle, search, indexing

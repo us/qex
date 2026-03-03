@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://crates.io/crates/qex-mcp"><img src="https://img.shields.io/crates/v/qex-mcp.svg" alt="crates.io"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021_edition-orange.svg" alt="Rust"></a>
 </p>
@@ -40,6 +41,17 @@ Claude Code uses grep + glob for code search — effective but token-hungry and 
 - **MCP Native**: Plugs directly into Claude Code as a tool server
 
 ## Quick Start
+
+**Install from crates.io:**
+
+```bash
+cargo install qex-mcp
+
+# Add to Claude Code
+claude mcp add qex --scope user -- ~/.cargo/bin/qex
+```
+
+**Build from source:**
 
 ```bash
 # Build (BM25-only, ~19 MB)
@@ -173,6 +185,13 @@ Download the embedding model for dense search. Requires the `dense` feature.
 | C++ | `.cpp`, `.cc`, `.cxx`, `.hpp` | function, method, class, struct, namespace |
 | C# | `.cs` | method, class, struct, interface, enum, namespace |
 | Markdown | `.md` | section, document |
+
+## Crates
+
+| Crate | Description | |
+|-------|-------------|-|
+| [`qex-core`](crates/qex-core) | Core library: chunking, search, indexing, Merkle DAG | [![crates.io](https://img.shields.io/crates/v/qex-core.svg)](https://crates.io/crates/qex-core) |
+| [`qex-mcp`](crates/qex-mcp) | MCP server binary (stdio transport via rmcp) | [![crates.io](https://img.shields.io/crates/v/qex-mcp.svg)](https://crates.io/crates/qex-mcp) |
 
 ## Project Structure
 

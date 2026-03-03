@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://crates.io/crates/qex-mcp"><img src="https://img.shields.io/crates/v/qex-mcp.svg" alt="crates.io"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021_edition-orange.svg" alt="Rust"></a>
 </p>
@@ -40,6 +41,17 @@ Claude Code 使用 grep + glob 进行代码搜索 —— 虽然有效，但消�
 - **原生 MCP 支持**：作为工具服务器直接接入 Claude Code
 
 ## 快速开始
+
+**从 crates.io 安装：**
+
+```bash
+cargo install qex-mcp
+
+# 添加到 Claude Code
+claude mcp add qex --scope user -- ~/.cargo/bin/qex
+```
+
+**从源码构建：**
 
 ```bash
 # 构建（仅 BM25，约 19 MB）
@@ -173,6 +185,13 @@ Claude Code ──(stdio/JSON-RPC)──▶ qex
 | C++ | `.cpp`, `.cc`, `.cxx`, `.hpp` | 函数、方法、类、结构体、命名空间 |
 | C# | `.cs` | 方法、类、结构体、接口、枚举、命名空间 |
 | Markdown | `.md` | 章节、文档 |
+
+## Crates
+
+| 包 | 说明 | |
+|----|------|-|
+| [`qex-core`](crates/qex-core) | 核心库：代码分块、搜索、索引、Merkle DAG | [![crates.io](https://img.shields.io/crates/v/qex-core.svg)](https://crates.io/crates/qex-core) |
+| [`qex-mcp`](crates/qex-mcp) | MCP 服务器二进制（通过 rmcp 的 stdio 传输） | [![crates.io](https://img.shields.io/crates/v/qex-mcp.svg)](https://crates.io/crates/qex-mcp) |
 
 ## 项目结构
 
