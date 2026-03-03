@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/code-context-core", "crates/code-context-mcp"]
+members = ["crates/qex-core", "crates/qex-mcp"]
 resolver = "2"
 
 [workspace.package]

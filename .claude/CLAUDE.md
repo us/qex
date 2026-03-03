@@ -1,11 +1,11 @@
-# code-context
+# qex
 
 Lightweight Rust MCP server for semantic code search using BM25 (tantivy) + optional dense vector search (ONNX) + tree-sitter chunking.
 
 ## Architecture
 
-- `crates/code-context-core/` - Core library: chunking, merkle, search, indexing
-- `crates/code-context-mcp/` - MCP server binary (stdio transport via rmcp)
+- `crates/qex-core/` - Core library: chunking, merkle, search, indexing
+- `crates/qex-mcp/` - MCP server binary (stdio transport via rmcp)
 
 ## Build & Test
 
@@ -25,7 +25,7 @@ Uses snowflake-arctic-embed-s (33MB ONNX INT8, 384-dim, 512 token max) for seman
 scripts/download-model.sh
 # Or via MCP tool: download_model
 
-# Model stored at: ~/.code-context/models/arctic-embed-s/
+# Model stored at: ~/.qex/models/arctic-embed-s/
 ```
 
 When model is available, search automatically uses hybrid BM25 + dense with Reciprocal Rank Fusion. Falls back to BM25-only if model not downloaded.
@@ -38,7 +38,7 @@ When model is available, search automatically uses hybrid BM25 + dense with Reci
 ## MCP Integration
 
 ```bash
-claude mcp add code-context --scope user -- ~/.local/bin/code-context
+claude mcp add qex --scope user -- ~/.local/bin/qex
 ```
 
 ## Key Dependencies
@@ -52,8 +52,8 @@ claude mcp add code-context --scope user -- ~/.local/bin/code-context
 ## Conventions
 
 - All logs go to stderr (stdout reserved for MCP JSON-RPC)
-- Storage: `~/.code-context/projects/{name}_{hash}/`
-- Dense index: `~/.code-context/projects/{name}_{hash}/dense/`
+- Storage: `~/.qex/projects/{name}_{hash}/`
+- Dense index: `~/.qex/projects/{name}_{hash}/dense/`
 - rmcp uses `Parameters<T>` wrapper for tool params, `ErrorData` for errors
 - schemars must use `rmcp::schemars::JsonSchema` (v1, not standalone 0.8)
 - `#[cfg(feature = "dense")]` for all dense-search code paths

@@ -40,7 +40,7 @@ const MERKLE_IGNORE_DIRS: &[&str] = &[
     "dist",
     ".next",
     ".cache",
-    ".code-context",
+    ".qex",
 ];
 
 /// Maximum snapshot age before triggering re-index (seconds)

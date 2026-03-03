@@ -49,7 +49,7 @@ const DEFAULT_IGNORE_DIRS: &[&str] = &[
     "target",
     "bin",
     "obj",
-    ".code-context",
+    ".qex",
 ];
 
 /// Default file patterns to ignore

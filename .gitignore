@@ -10,7 +10,7 @@
 *.swo
 
 # Runtime data
-.code-context/
+.qex/
 
 # Models (downloaded separately)
 *.onnx

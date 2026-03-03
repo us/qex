@@ -19,36 +19,36 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 ### Phase 1: Bug Fixes
 
 - [x] **Task 1.1**: Fix incremental dense index rebuild — lost vectors bug
-  - Files: `crates/code-context-core/src/index/mod.rs`
+  - Files: `crates/qex-core/src/index/mod.rs`
   - Details: Incremental index'te dosya silinince `dense.clear()` tüm vektörleri siliyor ama sadece yeni chunk'ları ekliyor — değişmemiş dosyaların vektörleri kayboluyor. Fix: clear sonrası tüm proje chunk'larını yeniden embed etmek yerine, dosya bazında silme yapıp (remove_by_file) sadece değişen dosyaları yeniden embed etmek.
   - Tests: Unit test — index 3 files, modify 1, verify all 3 files' vectors still exist
 
 - [x] **Task 1.2**: Fix compiler warning — dead code `force` field without dense
-  - Files: `crates/code-context-mcp/src/tools.rs`
+  - Files: `crates/qex-mcp/src/tools.rs`
   - Details: `DownloadModelParams.force` field is dead code when dense feature disabled. Add `#[allow(dead_code)]` or cfg gate.
   - Tests: `cargo build` without dense — no warnings
 
 - [x] **Task 1.3**: Fix dense-only search results missing from RRF output
-  - Files: `crates/code-context-core/src/index/mod.rs`
+  - Files: `crates/qex-core/src/index/mod.rs`
   - Details: Hybrid search'te dense-only sonuçlar (BM25'te olmayan) RRF'te chunk_id ile map'lenemiyor çünkü BM25 map'inde yoklar. Dense-only sonuçları BM25'ten ayrıca çekmek lazım.
   - Tests: Verify dense-only results appear in hybrid output
 
 ### Phase 2: Performance Optimization
 
 - [x] **Task 2.1**: Optimize embedding threading
-  - Files: `crates/code-context-core/src/search/dense.rs`
+  - Files: `crates/qex-core/src/search/dense.rs`
   - Details: add_chunks batch_size=32 ile sıralı çalışıyor. Multiple batches'ı parallel embed et (model thread-safe değil, ama batch'ler arası IO wait'i overlap edebiliriz). Alternatif: ort intra_threads'i 4'ten optimize et.
   - Tests: Benchmark — 397 chunk embedding time before/after
 
 - [x] **Task 2.2**: Skip re-embedding unchanged chunks on full_index (SKIPPED — low priority, ~20s acceptable for 400 chunks)
-  - Files: `crates/code-context-core/src/index/mod.rs`
+  - Files: `crates/qex-core/src/index/mod.rs`
   - Details: full_index force=true ile bile, eğer dense index mevcutsa ve chunk_id'ler aynıysa, embed'i skip et. chunk_id hash'i content'e bağlı olduğundan güvenli.
   - Tests: full_index twice — second should be much faster
 
 - [x] **Task 2.3**: Reduce binary size (SKIPPED — strip=true already in profile, 36MB acceptable)
   - Files: `Cargo.toml`
   - Details: Release profile'da `strip = true` zaten var. ort'un download ettiği dylib'leri kontrol et. ORT_DYLIB_PATH ile shared lib kullanma seçeneği araştır.
-  - Tests: `ls -lh target/release/code-context`
+  - Tests: `ls -lh target/release/qex`
 
 ### Phase 3: End-to-End Testing on Real Projects
 
@@ -56,7 +56,7 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
   - Details: `git clone https://github.com/tiangolo/fastapi /tmp/fastapi-test`. Index with dense. Test problem queries: "OpenAPI schema generation", "Starlette integration", "dependency injection container", "middleware authentication"
   - Tests: Compare BM25-only vs hybrid results for each query
 
-- [x] **Task 3.2**: Test on code-context itself — semantic queries (tested in Phase 4, "embedding model" query found correct files)
+- [x] **Task 3.2**: Test on qex itself — semantic queries (tested in Phase 4, "embedding model" query found correct files)
   - Details: Test queries that require semantic understanding: "how does the system detect file changes", "what handles tokenization", "cosine similarity search"
   - Tests: Verify results are semantically relevant, not just keyword matches
 
@@ -68,7 +68,7 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 
 - [x] **Task 4.1**: Add .gitignore entries for runtime files
   - Files: `.gitignore`
-  - Details: Add entries for `.code-context/`, `*.onnx`, IDE files, `.env`
+  - Details: Add entries for `.qex/`, `*.onnx`, IDE files, `.env`
   - Tests: `git status` shows clean set of files
 
 - [x] **Task 4.2**: Update .claude/CLAUDE.md with dense search info

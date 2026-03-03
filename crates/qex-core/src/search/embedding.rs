@@ -60,7 +60,7 @@ impl EmbeddingModel {
     /// Get the default model directory
     pub fn default_model_dir() -> Result<std::path::PathBuf> {
         let home = dirs::home_dir().context("Cannot determine home directory")?;
-        Ok(home.join(".code-context/models/arctic-embed-s"))
+        Ok(home.join(".qex/models/arctic-embed-s"))
     }
 
     /// Check if the model is downloaded

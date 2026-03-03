@@ -1,15 +1,15 @@
 [package]
-name = "code-context-mcp"
+name = "qex-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "code-context"
+name = "qex"
 path = "src/main.rs"
 
 [dependencies]
-code-context-core = { path = "../code-context-core", features = [] }
+qex-core = { path = "../qex-core", features = [] }
 rmcp.workspace = true
 schemars.workspace = true
 tokio.workspace = true
@@ -22,4 +22,4 @@ anyhow.workspace = true
 
 [features]
 default = []
-dense = ["code-context-core/dense"]
+dense = ["qex-core/dense"]

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 ///
 /// Layout:
 /// ```text
-/// ~/.code-context/projects/{project_name}_{hash8}/
+/// ~/.qex/projects/{project_name}_{hash8}/
 ///   ├── project_info.json
 ///   ├── tantivy/           # BM25 index
 ///   ├── snapshot.json      # Merkle DAG
@@ -42,7 +42,7 @@ impl ProjectStorage {
 
         let dir_name = format!("{}_{}", sanitize_name(project_name), hash);
 
-        let base_dir = code_context_home()?.join("projects").join(dir_name);
+        let base_dir = qex_home()?.join("projects").join(dir_name);
         fs::create_dir_all(&base_dir)
             .context("Failed to create project storage directory")?;
 
@@ -118,10 +118,10 @@ impl ProjectStorage {
     }
 }
 
-/// Get the code-context home directory
-fn code_context_home() -> Result<PathBuf> {
+/// Get the qex home directory
+fn qex_home() -> Result<PathBuf> {
     let home = dirs::home_dir().context("Could not determine home directory")?;
-    Ok(home.join(".code-context"))
+    Ok(home.join(".qex"))
 }
 
 /// Sanitize a project name for use in filesystem paths

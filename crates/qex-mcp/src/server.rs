@@ -1,6 +1,6 @@
 use crate::tools::{ClearIndexParams, GetStatusParams, IndexCodebaseParams, SearchCodeParams};
 use crate::tools::DownloadModelParams;
-use code_context_core::index::IncrementalIndexer;
+use qex_core::index::IncrementalIndexer;
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::tool::ToolRouter,
@@ -12,13 +12,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct CodeContextServer {
+pub struct QexServer {
     indexer: Arc<IncrementalIndexer>,
     tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
-impl CodeContextServer {
+impl QexServer {
     pub fn new() -> Self {
         Self {
             indexer: Arc::new(IncrementalIndexer::new()),
@@ -165,7 +165,7 @@ impl CodeContextServer {
         // Add dense search info
         #[cfg(feature = "dense")]
         {
-            use code_context_core::search::embedding::EmbeddingModel;
+            use qex_core::search::embedding::EmbeddingModel;
             response["dense_search_available"] = serde_json::json!(EmbeddingModel::is_available());
         }
 
@@ -214,7 +214,7 @@ impl CodeContextServer {
 
         #[cfg(feature = "dense")]
         {
-            use code_context_core::search::embedding::EmbeddingModel;
+            use qex_core::search::embedding::EmbeddingModel;
 
             let force = params.0.force.unwrap_or(false);
 
@@ -265,7 +265,7 @@ impl CodeContextServer {
 }
 
 #[tool_handler]
-impl ServerHandler for CodeContextServer {
+impl ServerHandler for QexServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
@@ -275,7 +275,7 @@ impl ServerHandler for CodeContextServer {
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             server_info: Implementation {
-                name: "code-context".to_string(),
+                name: "qex".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 title: None,
                 description: None,

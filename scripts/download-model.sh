@@ -2,7 +2,7 @@
 # Download snowflake-arctic-embed-s ONNX model for dense vector search
 set -euo pipefail
 
-MODEL_DIR="${HOME}/.code-context/models/arctic-embed-s"
+MODEL_DIR="${HOME}/.qex/models/arctic-embed-s"
 BASE_URL="https://huggingface.co/Snowflake/snowflake-arctic-embed-s/resolve/main"
 
 mkdir -p "$MODEL_DIR"

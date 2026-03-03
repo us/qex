@@ -1,6 +1,6 @@
 use clap::Parser;
 
-/// code-context: Lightweight semantic code search MCP server
+/// qex: Lightweight semantic code search MCP server
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct CliArgs {

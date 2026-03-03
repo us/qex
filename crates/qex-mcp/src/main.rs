@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::Parser;
 use config::CliArgs;
 use rmcp::ServiceExt;
-use server::CodeContextServer;
+use server::QexServer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -26,9 +26,9 @@ async fn main() -> Result<()> {
         .with_ansi(false)
         .init();
 
-    tracing::info!("Starting code-context MCP server v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Starting qex MCP server v{}", env!("CARGO_PKG_VERSION"));
 
-    let service = CodeContextServer::new()
+    let service = QexServer::new()
         .serve(rmcp::transport::stdio())
         .await
         .inspect_err(|e| {
