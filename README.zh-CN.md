@@ -1,13 +1,25 @@
-# QEX
+<h1 align="center">QEX</h1>
 
-**轻量级 MCP 服务器，用于语义化代码搜索 —— BM25 + 可选稠密向量 + tree-sitter 代码分块**
+<p align="center">
+  <strong>轻量级 MCP 语义代码搜索服务器</strong>
+</p>
+
+<p align="center">
+  BM25 + 可选稠密向量 + tree-sitter 代码分块
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021_edition-orange.svg" alt="Rust"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> | <strong>中文</strong>
+</p>
+
+---
 
 QEX 是一个用 Rust 构建的高性能 MCP 语义代码搜索服务器。将 BM25 全文检索与可选的稠密向量嵌入相结合，实现混合检索 —— 仅需一个约 19 MB 的二进制文件，即可提供媲美 Cursor 的搜索质量。Tree-sitter 解析理解代码结构（函数、类、方法），Merkle DAG 变更检测支持增量索引，一切在本地运行，零云端依赖。
-
-[English](README.md) | **中文**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-2021_edition-orange.svg)](https://www.rust-lang.org/)
 
 ## 最新特性
 

@@ -1,13 +1,25 @@
-# QEX
+<h1 align="center">QEX</h1>
 
-**Lightweight MCP server for semantic code search — BM25 + optional dense vectors + tree-sitter chunking**
+<p align="center">
+  <strong>Lightweight MCP server for semantic code search</strong>
+</p>
+
+<p align="center">
+  BM25 + optional dense vectors + tree-sitter chunking
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021_edition-orange.svg" alt="Rust"></a>
+</p>
+
+<p align="center">
+  <strong>English</strong> | <a href="README.zh-CN.md">中文</a>
+</p>
+
+---
 
 QEX is a high-performance MCP server for semantic code search built in Rust. It combines BM25 full-text search with optional dense vector embeddings for hybrid retrieval — delivering Cursor-quality search from a single ~19 MB binary. Tree-sitter parsing understands code structure (functions, classes, methods), Merkle DAG change detection enables incremental indexing, and everything runs locally with zero cloud dependencies.
-
-**English** | [中文](README.zh-CN.md)
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-2021_edition-orange.svg)](https://www.rust-lang.org/)
 
 ## What's New
 
