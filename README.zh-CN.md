@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-2021_edition-orange.svg" alt="Rust"></a>
 </p>
 
@@ -277,4 +277,4 @@ cargo build --release --features dense  # 约 36 MB
 
 ## 许可证
 
-MIT
+[AGPL-3.0](LICENSE)
