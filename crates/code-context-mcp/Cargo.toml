@@ -1,0 +1,25 @@
+[package]
+name = "code-context-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "code-context"
+path = "src/main.rs"
+
+[dependencies]
+code-context-core = { path = "../code-context-core", features = [] }
+rmcp.workspace = true
+schemars.workspace = true
+tokio.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+
+[features]
+default = []
+dense = ["code-context-core/dense"]
