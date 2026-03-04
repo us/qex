@@ -11,7 +11,7 @@ name = "qex"
 path = "src/main.rs"
 
 [dependencies]
-qex-core = { path = "../qex-core", version = "0.0.1", features = [] }
+qex-core = { path = "../qex-core", version = "0.0.2", features = [] }
 rmcp.workspace = true
 schemars.workspace = true
 tokio.workspace = true
