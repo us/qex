@@ -134,11 +134,18 @@ impl DenseIndex {
             .reserve(current_size + chunks.len())
             .map_err(|e| anyhow::anyhow!("Failed to reserve index space: {}", e))?;
 
-        // Embed in batches of 64 for efficiency
-        let batch_size = 64;
+        // Embed in small batches to limit memory (64 was using 4.6GB RAM)
+        let batch_size = 8;
         let mut added = 0;
+        let total = chunks.len();
 
-        for batch in chunks.chunks(batch_size) {
+        for (batch_idx, batch) in chunks.chunks(batch_size).enumerate() {
+            debug!(
+                "Embedding batch {}/{} ({} chunks done)",
+                batch_idx + 1,
+                (total + batch_size - 1) / batch_size,
+                added
+            );
             // Prepare texts: use name + content for richer embedding
             let texts: Vec<String> = batch
                 .iter()
@@ -153,8 +160,14 @@ impl DenseIndex {
                         text.push(' ');
                     }
                     text.push_str(&chunk.content);
-                    // Truncate to ~2000 chars to stay within model limits
-                    text.truncate(2000);
+                    // Truncate to ~1000 chars — enough for signatures + initial logic
+                    if text.len() > 1000 {
+                        let mut end = 1000;
+                        while !text.is_char_boundary(end) {
+                            end -= 1;
+                        }
+                        text.truncate(end);
+                    }
                     text
                 })
                 .collect();
