@@ -15,20 +15,30 @@ qex has minimal configuration. It runs as a stdio MCP server with no config file
 
 ## Feature Flags
 
-Build-time feature flags control which search engines are available:
+Build-time feature flags control which search engines and embedding backends are available:
 
 | Flag | Default | Binary Size | Description |
 |------|---------|-------------|-------------|
 | (none) | on | ~19 MB | BM25-only search via Tantivy |
-| `dense` | off | ~36 MB | BM25 + dense vector search via ONNX + HNSW |
+| `dense` | off | ~36 MB | BM25 + dense vector search via ONNX Runtime + HNSW |
+| `openai` | off | ~20 MB | OpenAI API embedding support via ureq |
+| `dense,openai` | off | ~37 MB | All embedding backends |
 
-```
-# BM25-only (recommended)
+```bash
+# BM25-only (recommended for most use cases)
 cargo build --release
 
-# BM25 + dense
+# BM25 + dense (local ONNX embeddings)
 cargo build --release --features dense
+
+# BM25 + OpenAI embeddings
+cargo build --release --features openai
+
+# All backends
+cargo build --release --features "dense,openai"
 ```
+
+> **Note:** The `dense` feature is required for the HNSW vector index (usearch). To use OpenAI embeddings for dense search, you need both `dense` and `openai` features enabled.
 
 ## Storage
 
@@ -60,9 +70,13 @@ qex respects `.gitignore` rules and also applies 50+ built-in ignore patterns:
 **Files:**
 Images (`.png`, `.jpg`, `.gif`, `.svg`, `.ico`, `.webp`), fonts (`.woff`, `.woff2`, `.ttf`, `.eot`), archives (`.zip`, `.tar`, `.gz`), compiled objects (`.o`, `.so`, `.dylib`, `.dll`), lock files, minified files (`.min.js`, `.min.css`), source maps (`.map`)
 
-## Embedding Model
+## Embedding Backends
 
-When using the `dense` feature, the embedding model is:
+QEX supports pluggable embedding backends via the `Embedder` trait. The active backend is selected by the `QEX_EMBEDDING_PROVIDER` environment variable.
+
+### ONNX Runtime (default)
+
+Local inference, zero cloud dependencies. Requires the `dense` feature flag.
 
 | Property | Value |
 |----------|-------|
@@ -72,6 +86,67 @@ When using the `dense` feature, the embedding model is:
 | Dimensions | 384 |
 | Location | `~/.qex/models/arctic-embed-s/` |
 | Download | Via `download_model` MCP tool or `scripts/download-model.sh` |
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `QEX_EMBEDDING_PROVIDER` | `onnx` | Set to `onnx` or omit |
+| `QEX_ONNX_MODEL_DIR` | `~/.qex/models/arctic-embed-s` | Override model directory (supports `~` expansion) |
+
+### OpenAI API
+
+Cloud-based embeddings via the OpenAI embeddings API. Requires the `openai` feature flag. Works with any OpenAI-compatible endpoint (OpenAI, Azure, Ollama, LiteLLM, etc.).
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `QEX_EMBEDDING_PROVIDER` | — | Set to `openai` |
+| `QEX_OPENAI_API_KEY` | — | API key (also reads `OPENAI_API_KEY` as fallback) |
+| `QEX_OPENAI_MODEL` | `text-embedding-3-small` | Embedding model name |
+| `QEX_OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL |
+| `QEX_OPENAI_DIMENSIONS` | auto-detected | Override dimensions for unknown models |
+
+**Known model dimensions (auto-detected):**
+
+| Model | Dimensions |
+|-------|-----------|
+| `text-embedding-3-small` | 1536 |
+| `text-embedding-3-large` | 3072 |
+| `text-embedding-ada-002` | 1536 |
+| Other | Set `QEX_OPENAI_DIMENSIONS` (defaults to 1536) |
+
+**Security:**
+- **SSRF protection**: Base URLs must use HTTPS. Plain HTTP is only allowed for localhost/127.0.0.1/[::1] (for local proxies and Ollama).
+- **API key sanitization**: Error messages never contain API keys or authorization headers. The `sk-` prefix pattern is also filtered.
+- **Typed retry**: Exponential backoff (1s, 2s, 4s) with max 3 attempts on HTTP 429 (rate limit), 5xx (server error), timeouts, and connection failures. Uses `ureq::Error` variant matching, not string matching.
+
+**Example configurations:**
+
+```bash
+# OpenAI (default)
+export QEX_EMBEDDING_PROVIDER=openai
+export QEX_OPENAI_API_KEY=sk-...
+
+# Ollama (local)
+export QEX_EMBEDDING_PROVIDER=openai
+export QEX_OPENAI_API_KEY=unused
+export QEX_OPENAI_BASE_URL=http://localhost:11434/v1
+export QEX_OPENAI_MODEL=nomic-embed-text
+export QEX_OPENAI_DIMENSIONS=768
+
+# Azure OpenAI
+export QEX_EMBEDDING_PROVIDER=openai
+export QEX_OPENAI_API_KEY=your-azure-key
+export QEX_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/text-embedding-3-small
+```
+
+### Dimension Mismatch Guard
+
+When the embedding provider or model changes between indexing runs, QEX detects the mismatch via `dense_meta.json` (stored alongside the dense index). This file records:
+
+```json
+{"provider":"onnx","dimensions":384,"model_name":"snowflake-arctic-embed-s"}
+```
+
+If any of these fields differ from the current embedder, the dense index is automatically rebuilt from scratch. This prevents silent search quality degradation from mismatched vector spaces.
 
 ## Merkle Snapshot TTL
 
@@ -100,3 +175,9 @@ Snapshots older than **5 minutes** trigger a re-check on the next `index_codebas
 | ndarray | 0.16 | Tensor operations |
 | usearch | 2.24 | HNSW vector index |
 | tokenizers | 0.22 | HuggingFace tokenizer |
+
+### OpenAI Mode (Additional)
+
+| Crate | Version | Purpose |
+|-------|---------|---------|
+| ureq | 3 | Synchronous HTTP client (with `json` feature) |

@@ -24,10 +24,11 @@ QEX 是一个用 Rust 构建的高性能 MCP 语义代码搜索服务器。将 B
 
 ## 最新特性
 
+- **可插拔嵌入后端** —— 基于 trait 的抽象层，支持 ONNX Runtime（本地）和 OpenAI API 嵌入提供者，通过环境变量配置
 - **混合搜索** —— BM25 + 稠密向量搜索，通过倒数排名融合（RRF）比纯稠密检索准确率高 48%
 - **10 种语言支持** —— Python、JavaScript、TypeScript、Rust、Go、Java、C、C++、C#、Markdown，基于 tree-sitter
 - **增量索引** —— 基于 Merkle DAG 的变更检测，仅重新索引发生变化的文件
-- **可选稠密向量** —— snowflake-arctic-embed-s（33 MB，384 维，INT8 量化），通过 ONNX Runtime
+- **可选稠密向量** —— snowflake-arctic-embed-s（33 MB，384 维，INT8 量化）通过 ONNX Runtime，或 OpenAI text-embedding-3-small 通过 API
 - **原生 MCP 支持** —— 通过 stdio 作为工具服务器直接接入 Claude Code
 
 ## 为什么选择 QEX？
@@ -60,6 +61,12 @@ cargo build --release
 # 或包含稠密向量搜索（约 36 MB）
 cargo build --release --features dense
 
+# 或包含 OpenAI 嵌入支持
+cargo build --release --features openai
+
+# 或包含所有嵌入后端
+cargo build --release --features "dense,openai"
+
 # 安装
 cp target/release/qex ~/.local/bin/
 
@@ -71,7 +78,11 @@ claude mcp add qex --scope user -- ~/.local/bin/qex
 
 ### 启用稠密搜索（可选）
 
-稠密搜索增加了语义理解能力 —— 即使代码中写的是 `verify_token`，也能通过搜索"身份验证中间件"找到它。
+稠密搜索增加了语义理解能力 —— 即使代码中写的是 `verify_token`，也能通过搜索"身份验证中间件"找到它。支持两种嵌入后端：
+
+#### 方案 A：本地 ONNX 模型（推荐）
+
+需要 `dense` 特性标志。零云端依赖。
 
 ```bash
 # 下载嵌入模型（约 33 MB）
@@ -84,6 +95,21 @@ claude mcp add qex --scope user -- ~/.local/bin/qex
 **模型**：[snowflake-arctic-embed-s](https://huggingface.co/Snowflake/snowflake-arctic-embed-s) —— 384 维，INT8 量化，最大 512 token。
 
 当模型存在时，搜索自动切换到混合模式。无需额外配置。
+
+#### 方案 B：OpenAI API 嵌入
+
+需要 `openai` 特性标志和 API 密钥。支持任何 OpenAI 兼容的 API。
+
+```bash
+# 使用 OpenAI 嵌入构建（可与 dense 组合）
+cargo build --release --features "dense,openai"
+
+# 配置
+export QEX_EMBEDDING_PROVIDER=openai
+export QEX_OPENAI_API_KEY=sk-...  # 或设置 OPENAI_API_KEY
+```
+
+**安全特性：** SSRF 防护（仅允许 HTTPS 或 localhost）、API 密钥脱敏、指数退避重试（429/5xx/超时）。
 
 ## 架构
 
@@ -210,9 +236,10 @@ qex/
 │   │       │   └── languages/        # 11 种语言实现
 │   │       ├── search/               # 搜索引擎
 │   │       │   ├── bm25.rs           # Tantivy BM25 索引
-│   │       │   ├── dense.rs          # HNSW 向量索引（可选）
-│   │       │   ├── embedding.rs      # ONNX 嵌入模型（可选）
-│   │       │   ├── hybrid.rs         # 倒数排名融合（可选）
+│   │       │   ├── dense.rs          # HNSW 向量索引（dense 特性）
+│   │       │   ├── embedding.rs      # Embedder trait + ONNX 后端（dense|openai 特性）
+│   │       │   ├── openai_embedder.rs # OpenAI API 后端（openai 特性）
+│   │       │   ├── hybrid.rs         # 倒数排名融合（dense 特性）
 │   │       │   ├── ranking.rs        # 多因子重排序
 │   │       │   └── query.rs          # 查询分析
 │   │       ├── index/                # 增量索引器
@@ -260,11 +287,18 @@ qex/
 cargo test                              # 41 个测试
 
 # 运行测试（包含稠密搜索）
-cargo test --features dense             # 46 个测试
+cargo test --features dense             # 48 个测试
+
+# 运行测试（包含 OpenAI 嵌入）
+cargo test --features openai            # 50 个测试
+
+# 运行测试（所有特性）
+cargo test --features "dense,openai"    # 55 个测试
 
 # 构建发布版本
 cargo build --release                   # 约 19 MB
 cargo build --release --features dense  # 约 36 MB
+cargo build --release --features "dense,openai"  # 所有嵌入后端
 ```
 
 ## 核心依赖
@@ -277,9 +311,10 @@ cargo build --release --features dense  # 约 36 MB
 | rusqlite | 0.32 | SQLite 元数据（内置） |
 | ignore | 0.4 | 遵循 gitignore 的文件遍历 |
 | rayon | 1.10 | 并行代码分块 |
-| ort | 2.0.0-rc.11 | ONNX Runtime _（可选，稠密搜索）_ |
-| usearch | 2.24 | HNSW 向量索引 _（可选，稠密搜索）_ |
-| tokenizers | 0.22 | HuggingFace 分词器 _（可选，稠密搜索）_ |
+| ort | 2.0.0-rc.11 | ONNX Runtime _（可选，`dense`）_ |
+| usearch | 2.24 | HNSW 向量索引 _（可选，`dense`）_ |
+| tokenizers | 0.22 | HuggingFace 分词器 _（可选，`dense`）_ |
+| ureq | 3 | 同步 HTTP 客户端 _（可选，`openai`）_ |
 
 ## 性能指标
 

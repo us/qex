@@ -41,9 +41,13 @@ ndarray = { workspace = true, optional = true }
 usearch = { workspace = true, optional = true }
 tokenizers = { workspace = true, optional = true, default-features = false, features = ["fancy-regex"] }
 
+# OpenAI embedding API (optional, behind "openai" feature)
+ureq = { workspace = true, optional = true }
+
 [features]
 default = []
 dense = ["ort", "ndarray", "usearch", "tokenizers"]
+openai = ["ureq"]
 
 [dev-dependencies]
 tempfile.workspace = true

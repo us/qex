@@ -24,10 +24,11 @@ QEX is a high-performance MCP server for semantic code search built in Rust. It 
 
 ## What's New
 
+- **Pluggable Embedding Backends** — Trait-based abstraction over ONNX Runtime (local) and OpenAI API embedding providers with env var configuration
 - **Hybrid Search** — BM25 + dense vector search with Reciprocal Rank Fusion for 48% better accuracy than dense-only retrieval
 - **10 Language Support** — Python, JavaScript, TypeScript, Rust, Go, Java, C, C++, C#, Markdown via tree-sitter
 - **Incremental Indexing** — Merkle DAG change detection, only re-indexes what changed
-- **Optional Dense Vectors** — snowflake-arctic-embed-s (33 MB, 384-dim, INT8 quantized) via ONNX Runtime
+- **Optional Dense Vectors** — snowflake-arctic-embed-s (33 MB, 384-dim, INT8 quantized) via ONNX Runtime, or OpenAI text-embedding-3-small via API
 - **MCP Native** — plugs directly into Claude Code as a tool server via stdio
 
 ## Why QEX?
@@ -60,6 +61,12 @@ cargo build --release
 # Or with dense vector search (~36 MB)
 cargo build --release --features dense
 
+# Or with OpenAI embedding support
+cargo build --release --features openai
+
+# Or with all embedding backends
+cargo build --release --features "dense,openai"
+
 # Install
 cp target/release/qex ~/.local/bin/
 
@@ -71,7 +78,11 @@ That's it. Claude will now have access to `search_code` and `index_codebase` too
 
 ### Enable Dense Search (Optional)
 
-Dense search adds semantic understanding — finding "authentication middleware" even when the code says `verify_token`.
+Dense search adds semantic understanding — finding "authentication middleware" even when the code says `verify_token`. Two embedding backends are available:
+
+#### Option A: Local ONNX Model (Recommended)
+
+Requires the `dense` feature flag. Zero cloud dependencies.
 
 ```bash
 # Download the embedding model (~33 MB)
@@ -84,6 +95,21 @@ Dense search adds semantic understanding — finding "authentication middleware"
 **Model**: [snowflake-arctic-embed-s](https://huggingface.co/Snowflake/snowflake-arctic-embed-s) — 384-dim, INT8 quantized, 512 token max.
 
 When the model is present, search automatically switches to hybrid mode. No configuration needed.
+
+#### Option B: OpenAI API Embeddings
+
+Requires the `openai` feature flag and an API key. Supports any OpenAI-compatible API.
+
+```bash
+# Build with OpenAI support (can combine with dense)
+cargo build --release --features "dense,openai"
+
+# Configure
+export QEX_EMBEDDING_PROVIDER=openai
+export QEX_OPENAI_API_KEY=sk-...  # or OPENAI_API_KEY
+```
+
+See [Configuration](#embedding-backends) for all options.
 
 ## Architecture
 
@@ -109,7 +135,7 @@ Claude Code ──(stdio/JSON-RPC)──▶ qex
 
 1. **Query Analysis** — Tokenization, stop-word removal, intent detection
 2. **BM25 Search** — Full-text search via tantivy with field boosts (name, content, tags, path)
-3. **Dense Search** _(optional)_ — Embed query → HNSW cosine similarity → top-k vectors
+3. **Dense Search** _(optional)_ — Embed query via pluggable backend (ONNX or OpenAI) → HNSW cosine similarity → top-k vectors
 4. **Reciprocal Rank Fusion** — Merge BM25 and dense results: `score = Σ 1/(k + rank)`
 5. **Multi-factor Ranking** — Re-rank by chunk type, name match, path relevance, tags, docstring presence
 6. **Test Penalty** — Down-rank test files (0.7×) to prioritize implementation code
@@ -120,8 +146,9 @@ Claude Code ──(stdio/JSON-RPC)──▶ qex
 2. **Tree-sitter Parsing** — Language-aware AST traversal, extracts functions/classes/methods
 3. **Chunk Enrichment** — Tags (async, auth, database...), complexity score, docstrings, decorators
 4. **BM25 Indexing** — 14-field tantivy schema with per-field boosts
-5. **Dense Indexing** _(optional)_ — Batch embedding (64 chunks/batch) → HNSW index
+5. **Dense Indexing** _(optional)_ — Batch embedding via `Embedder` trait (ONNX or OpenAI) → HNSW index
 6. **Merkle Snapshot** — SHA-256 DAG for incremental change detection
+7. **Dimension Guard** — `dense_meta.json` tracks provider/model/dimensions; mismatches trigger full re-index
 
 ## MCP Tools
 
@@ -210,9 +237,10 @@ qex/
 │   │       │   └── languages/        # 11 language implementations
 │   │       ├── search/               # Search engines
 │   │       │   ├── bm25.rs           # Tantivy BM25 index
-│   │       │   ├── dense.rs          # HNSW vector index (optional)
-│   │       │   ├── embedding.rs      # ONNX embeddings (optional)
-│   │       │   ├── hybrid.rs         # Reciprocal Rank Fusion (optional)
+│   │       │   ├── dense.rs          # HNSW vector index (feature: dense)
+│   │       │   ├── embedding.rs      # Embedder trait + ONNX backend (feature: dense|openai)
+│   │       │   ├── openai_embedder.rs # OpenAI API backend (feature: openai)
+│   │       │   ├── hybrid.rs         # Reciprocal Rank Fusion (feature: dense)
 │   │       │   ├── ranking.rs        # Multi-factor re-ranking
 │   │       │   └── query.rs          # Query analysis
 │   │       ├── index/                # Incremental indexer
@@ -244,6 +272,9 @@ All data is stored locally under `~/.qex/`:
 │   └── {name}_{hash}/         # Per-project index
 │       ├── tantivy/           # BM25 index
 │       ├── dense/             # Vector index (optional)
+│       │   ├── dense.usearch  # HNSW index file
+│       │   ├── dense_mapping.json  # Chunk ID ↔ vector key mapping
+│       │   └── dense_meta.json     # Provider/model/dimensions guard
 │       ├── snapshot.json      # Merkle DAG
 │       └── stats.json         # Index stats
 │
@@ -253,6 +284,50 @@ All data is stored locally under `~/.qex/`:
         └── tokenizer.json
 ```
 
+## Embedding Backends
+
+QEX uses a pluggable `Embedder` trait to support multiple embedding providers. The backend is selected via the `QEX_EMBEDDING_PROVIDER` environment variable.
+
+### ONNX Runtime (default)
+
+Local inference with zero cloud dependencies. Requires the `dense` feature flag.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QEX_EMBEDDING_PROVIDER` | `onnx` | Set to `onnx` (or omit) |
+| `QEX_ONNX_MODEL_DIR` | `~/.qex/models/arctic-embed-s` | Override model directory |
+
+### OpenAI API
+
+Cloud-based embeddings via the OpenAI API (or any compatible API like Ollama, LiteLLM, Azure). Requires the `openai` feature flag.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QEX_EMBEDDING_PROVIDER` | — | Set to `openai` |
+| `QEX_OPENAI_API_KEY` | — | API key (also reads `OPENAI_API_KEY`) |
+| `QEX_OPENAI_MODEL` | `text-embedding-3-small` | Model name |
+| `QEX_OPENAI_BASE_URL` | `https://api.openai.com/v1` | API base URL |
+| `QEX_OPENAI_DIMENSIONS` | auto | Override dimensions for unknown models |
+
+**Security features:**
+- SSRF protection: only HTTPS or `http://localhost` URLs allowed for base URL
+- API key sanitization: keys are never leaked in error messages
+- Typed retry: exponential backoff (1s, 2s, 4s) on 429/5xx/timeout/connection errors
+
+**Compatible APIs:** Any OpenAI-compatible embeddings endpoint works. Set `QEX_OPENAI_BASE_URL` to your provider's URL:
+
+```bash
+# Ollama
+export QEX_OPENAI_BASE_URL=http://localhost:11434/v1
+
+# Azure OpenAI
+export QEX_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/deployments/your-model
+```
+
+### Dimension Mismatch Guard
+
+When switching embedding providers or models, QEX detects the mismatch via `dense_meta.json` and automatically triggers a full re-index. This prevents silent search quality degradation from mismatched vector spaces.
+
 ## Build & Test
 
 ```bash
@@ -260,11 +335,18 @@ All data is stored locally under `~/.qex/`:
 cargo test                              # 41 tests
 
 # Run tests (with dense search)
-cargo test --features dense             # 46 tests
+cargo test --features dense             # 48 tests
+
+# Run tests (with OpenAI embedder)
+cargo test --features openai            # 50 tests
+
+# Run tests (all features)
+cargo test --features "dense,openai"    # 55 tests
 
 # Build for release
 cargo build --release                   # ~19 MB binary
 cargo build --release --features dense  # ~36 MB binary
+cargo build --release --features "dense,openai"  # All backends
 ```
 
 ## Key Dependencies
@@ -277,9 +359,10 @@ cargo build --release --features dense  # ~36 MB binary
 | rusqlite | 0.32 | SQLite metadata (bundled) |
 | ignore | 0.4 | Gitignore-compatible file walking |
 | rayon | 1.10 | Parallel chunking |
-| ort | 2.0.0-rc.11 | ONNX Runtime _(optional, dense)_ |
-| usearch | 2.24 | HNSW vector index _(optional, dense)_ |
-| tokenizers | 0.22 | HuggingFace tokenizer _(optional, dense)_ |
+| ort | 2.0.0-rc.11 | ONNX Runtime _(optional, `dense`)_ |
+| usearch | 2.24 | HNSW vector index _(optional, `dense`)_ |
+| tokenizers | 0.22 | HuggingFace tokenizer _(optional, `dense`)_ |
+| ureq | 3 | Sync HTTP client _(optional, `openai`)_ |
 
 ## Performance
 

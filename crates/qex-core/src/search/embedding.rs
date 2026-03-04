@@ -1,29 +1,165 @@
-//! ONNX-based text embedding for dense vector search.
+//! Text embedding for dense vector search.
 //!
-//! Uses snowflake-arctic-embed-s (33MB quantized, 384-dim, 512 token max).
-//! Only compiled when the `dense` feature is enabled.
+//! Provides a trait-based abstraction over embedding backends:
+//! - `dense` feature: ONNX Runtime with snowflake-arctic-embed-s (384-dim)
+//! - `openai` feature: OpenAI API (text-embedding-3-small, 1536-dim)
+//!
+//! Configure via env vars:
+//! - `QEX_EMBEDDING_PROVIDER`: "onnx" (default) or "openai"
+//! - `QEX_ONNX_MODEL_DIR`: override ONNX model directory
+//! - `QEX_OPENAI_API_KEY` / `OPENAI_API_KEY`: API key for OpenAI
+//! - `QEX_OPENAI_MODEL`: model name (default: text-embedding-3-small)
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+
+/// L2 normalize a vector in-place
+pub(crate) fn l2_normalize(mut vec: Vec<f32>) -> Vec<f32> {
+    let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm.is_finite() && norm > 0.0 {
+        for v in &mut vec {
+            *v /= norm;
+        }
+    }
+    vec
+}
+
+/// Metadata about an embedding provider
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmbedderInfo {
+    /// Provider name (e.g. "onnx", "openai")
+    pub provider: String,
+    /// Output embedding dimensions
+    pub dimensions: usize,
+    /// Model identifier
+    pub model_name: String,
+}
+
+/// Trait for embedding text into dense vectors
+pub trait Embedder {
+    /// Get metadata about this embedder
+    fn info(&self) -> EmbedderInfo;
+
+    /// Encode a batch of texts into embedding vectors
+    fn encode_batch(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>>;
+
+    /// Encode a single query (may add provider-specific prefixes)
+    fn encode_query(&mut self, query: &str) -> Result<Vec<f32>>;
+}
+
+/// Load the configured embedder based on env vars.
+///
+/// Reads `QEX_EMBEDDING_PROVIDER` (default: "onnx"):
+/// - "onnx": loads ONNX model (requires `dense` feature)
+/// - "openai": uses OpenAI API (requires `openai` feature)
+pub fn load_embedder() -> Result<Box<dyn Embedder>> {
+    let provider = std::env::var("QEX_EMBEDDING_PROVIDER")
+        .unwrap_or_else(|_| "onnx".to_string());
+    load_embedder_for_provider(&provider)
+}
+
+/// Load an embedder for the given provider name.
+///
+/// Testable without env var manipulation.
+pub fn load_embedder_for_provider(provider: &str) -> Result<Box<dyn Embedder>> {
+    match provider {
+        "onnx" => load_onnx_embedder(),
+        #[cfg(feature = "openai")]
+        "openai" => {
+            let embedder = super::openai_embedder::OpenAiEmbedder::from_env()?;
+            Ok(Box::new(embedder))
+        }
+        #[cfg(not(feature = "openai"))]
+        "openai" => anyhow::bail!(
+            "OpenAI embedding provider requested but 'openai' feature is not enabled. \
+             Build with --features openai"
+        ),
+        other => anyhow::bail!(
+            "Unknown embedding provider '{}'. Supported: onnx, openai",
+            other
+        ),
+    }
+}
+
+#[cfg(feature = "dense")]
+fn expand_tilde(path: &str) -> Result<std::path::PathBuf> {
+    if path == "~" {
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))
+    } else if let Some(rest) = path.strip_prefix("~/") {
+        let home =
+            dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+        Ok(home.join(rest))
+    } else {
+        Ok(std::path::PathBuf::from(path))
+    }
+}
+
+#[cfg(feature = "dense")]
+fn load_onnx_embedder() -> Result<Box<dyn Embedder>> {
+    let model_dir = match std::env::var("QEX_ONNX_MODEL_DIR") {
+        Ok(dir) => expand_tilde(&dir)?,
+        Err(_) => EmbeddingModel::default_model_dir()?,
+    };
+
+    if !model_dir.join("model.onnx").exists() {
+        anyhow::bail!(
+            "ONNX embedding model not found at {}. Run scripts/download-model.sh",
+            model_dir.display()
+        );
+    }
+
+    let model = EmbeddingModel::load(&model_dir)?;
+    Ok(Box::new(model))
+}
+
+#[cfg(not(feature = "dense"))]
+fn load_onnx_embedder() -> Result<Box<dyn Embedder>> {
+    anyhow::bail!(
+        "ONNX embedding provider requested but 'dense' feature is not enabled. \
+         Build with --features dense"
+    )
+}
+
+// ---------------------------------------------------------------------------
+// ONNX embedding model (behind "dense" feature)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "dense")]
+use anyhow::Context;
+#[cfg(feature = "dense")]
 use ndarray::Array2;
+#[cfg(feature = "dense")]
 use ort::session::Session;
+#[cfg(feature = "dense")]
 use ort::value::Tensor;
+#[cfg(feature = "dense")]
 use std::path::Path;
+#[cfg(feature = "dense")]
 use tokenizers::Tokenizer;
+#[cfg(feature = "dense")]
 use tracing::info;
 
 /// Query prefix for arctic-embed models (asymmetric retrieval)
+#[cfg(feature = "dense")]
 const QUERY_PREFIX: &str = "Represent this sentence for searching relevant passages: ";
 
 /// Maximum sequence length for the model
+#[cfg(feature = "dense")]
 const MAX_SEQ_LEN: usize = 512;
 
+/// snowflake-arctic-embed-s output dimensions
+#[cfg(feature = "dense")]
+const ARCTIC_EMBED_S_DIMENSIONS: usize = 384;
+
 /// Embedding model backed by ONNX Runtime
+#[cfg(feature = "dense")]
 pub struct EmbeddingModel {
     session: Session,
     tokenizer: Tokenizer,
     dimensions: usize,
 }
 
+#[cfg(feature = "dense")]
 impl EmbeddingModel {
     /// Load model from a directory containing model.onnx and tokenizer.json
     pub fn load(model_dir: &Path) -> Result<Self> {
@@ -53,7 +189,7 @@ impl EmbeddingModel {
         Ok(Self {
             session,
             tokenizer,
-            dimensions: 384, // arctic-embed-s output dimension
+            dimensions: ARCTIC_EMBED_S_DIMENSIONS,
         })
     }
 
@@ -77,18 +213,15 @@ impl EmbeddingModel {
 
     /// Encode a single text into an embedding vector
     pub fn encode(&mut self, text: &str) -> Result<Vec<f32>> {
-        let results = self.encode_batch(&[text])?;
-        Ok(results.into_iter().next().unwrap())
+        let results = self.encode_batch_impl(&[text])?;
+        results
+            .into_iter()
+            .next()
+            .context("ONNX model returned empty results for single text")
     }
 
-    /// Encode a query (adds the asymmetric retrieval prefix)
-    pub fn encode_query(&mut self, query: &str) -> Result<Vec<f32>> {
-        let prefixed = format!("{}{}", QUERY_PREFIX, query);
-        self.encode(&prefixed)
-    }
-
-    /// Encode a batch of texts into embedding vectors
-    pub fn encode_batch(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+    /// Internal batch encoding implementation
+    fn encode_batch_impl(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -109,6 +242,11 @@ impl EmbeddingModel {
             .map(|e| e.get_ids().len().min(MAX_SEQ_LEN))
             .max()
             .unwrap_or(0);
+
+        if max_len == 0 {
+            // All texts tokenized to zero length — return zero vectors
+            return Ok(vec![vec![0.0f32; self.dimensions]; texts.len()]);
+        }
 
         let batch_size = texts.len();
 
@@ -146,7 +284,7 @@ impl EmbeddingModel {
             .try_extract_tensor::<f32>()
             .context("Failed to extract output tensor")?;
 
-        let hidden_dim = *shape.last().unwrap_or(&384) as usize;
+        let hidden_dim = *shape.last().unwrap_or(&(ARCTIC_EMBED_S_DIMENSIONS as i64)) as usize;
         let seq_len_out = if shape.len() >= 2 { shape[1] as usize } else { max_len };
 
         // Mean pooling with attention mask over raw tensor data
@@ -175,12 +313,7 @@ impl EmbeddingModel {
             }
 
             // L2 normalize
-            let norm: f32 = pooled.iter().map(|x| x * x).sum::<f32>().sqrt();
-            if norm > 0.0 {
-                for v in &mut pooled {
-                    *v /= norm;
-                }
-            }
+            let pooled = l2_normalize(pooled);
 
             embeddings.push(pooled);
         }
@@ -189,11 +322,32 @@ impl EmbeddingModel {
     }
 }
 
+#[cfg(feature = "dense")]
+impl Embedder for EmbeddingModel {
+    fn info(&self) -> EmbedderInfo {
+        EmbedderInfo {
+            provider: "onnx".to_string(),
+            dimensions: self.dimensions,
+            model_name: "snowflake-arctic-embed-s".to_string(),
+        }
+    }
+
+    fn encode_batch(&mut self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        self.encode_batch_impl(texts)
+    }
+
+    fn encode_query(&mut self, query: &str) -> Result<Vec<f32>> {
+        let prefixed = format!("{}{}", QUERY_PREFIX, query);
+        self.encode(&prefixed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "dense")]
     fn test_embedding_model_load_and_encode() {
         let model_dir = EmbeddingModel::default_model_dir().unwrap();
         if !model_dir.join("model.onnx").exists() {
@@ -212,11 +366,10 @@ mod tests {
         let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
         assert!((norm - 1.0).abs() < 0.01, "norm={}", norm);
 
-        // Test query encode (with prefix)
+        // Test via Embedder trait
         let query_emb = model.encode_query("authentication").unwrap();
         assert_eq!(query_emb.len(), 384);
 
-        // Test batch encode
         let batch = model
             .encode_batch(&["hello world", "code search", "database connection"])
             .unwrap();
@@ -226,5 +379,22 @@ mod tests {
         // Verify different texts produce different embeddings
         assert_ne!(batch[0], batch[1]);
         assert_ne!(batch[1], batch[2]);
+    }
+
+    #[test]
+    fn test_load_embedder_unknown_provider() {
+        let result = load_embedder_for_provider("unknown_provider");
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(err.to_string().contains("Unknown embedding provider"));
+    }
+
+    #[test]
+    fn test_load_embedder_for_provider_onnx_without_feature() {
+        // "onnx" provider should either work (dense feature) or fail gracefully (no dense)
+        let result = load_embedder_for_provider("onnx");
+        // We don't assert success/failure because it depends on feature flags and model availability
+        // Just ensure it doesn't panic
+        let _ = result;
     }
 }

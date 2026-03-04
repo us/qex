@@ -25,3 +25,4 @@ anyhow.workspace = true
 [features]
 default = []
 dense = ["qex-core/dense"]
+openai = ["qex-core/openai"]

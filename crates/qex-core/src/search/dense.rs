@@ -3,12 +3,16 @@
 //! Only compiled when the `dense` feature is enabled.
 
 use crate::chunk::CodeChunk;
-use crate::search::embedding::EmbeddingModel;
+use crate::search::embedding::Embedder;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, info};
 use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
+
+/// Batch size for embedding chunks. Balances memory vs. throughput.
+/// (64 caused ~4.6 GB RAM usage with arctic-embed-s)
+const EMBED_BATCH_SIZE: usize = 8;
 
 /// Dense vector search index backed by usearch HNSW
 pub struct DenseIndex {
@@ -56,9 +60,12 @@ impl DenseIndex {
 
         if index_path.exists() && mapping_path.exists() {
             // Load existing index
+            let path_str = index_path
+                .to_str()
+                .context("Dense index path contains non-UTF-8 characters")?;
             dense
                 .index
-                .load(index_path.to_str().unwrap())
+                .load(path_str)
                 .map_err(|e| anyhow::anyhow!("Failed to load usearch index: {}", e))?;
 
             // Load key mappings: Vec<(key, chunk_id, file_path)>
@@ -84,6 +91,10 @@ impl DenseIndex {
                         dense.next_key = key + 1;
                     }
                 }
+            } else {
+                anyhow::bail!(
+                    "Failed to parse dense_mapping.json: file is corrupt or in unknown format"
+                );
             }
 
             info!(
@@ -102,8 +113,11 @@ impl DenseIndex {
         let index_path = index_dir.join("dense.usearch");
         let mapping_path = index_dir.join("dense_mapping.json");
 
+        let path_str = index_path
+            .to_str()
+            .context("Dense index path contains non-UTF-8 characters")?;
         self.index
-            .save(index_path.to_str().unwrap())
+            .save(path_str)
             .map_err(|e| anyhow::anyhow!("Failed to save usearch index: {}", e))?;
 
         // Save key mappings with file_path info
@@ -116,14 +130,17 @@ impl DenseIndex {
             .map(|(k, c)| (k, c, chunk_to_file.get(c.as_str()).copied().unwrap_or("")))
             .collect();
         let json = serde_json::to_string(&mappings)?;
-        std::fs::write(&mapping_path, json)?;
+        // Atomic write: write to temp file then rename to avoid corruption on crash
+        let tmp_path = mapping_path.with_extension("json.tmp");
+        std::fs::write(&tmp_path, &json)?;
+        std::fs::rename(&tmp_path, &mapping_path)?;
 
         debug!("Saved dense index: {} vectors", self.key_to_chunk_id.len());
         Ok(())
     }
 
     /// Add chunks to the index by embedding them with the model
-    pub fn add_chunks(&mut self, chunks: &[CodeChunk], model: &mut EmbeddingModel) -> Result<usize> {
+    pub fn add_chunks(&mut self, chunks: &[CodeChunk], model: &mut dyn Embedder) -> Result<usize> {
         if chunks.is_empty() {
             return Ok(0);
         }
@@ -134,8 +151,7 @@ impl DenseIndex {
             .reserve(current_size + chunks.len())
             .map_err(|e| anyhow::anyhow!("Failed to reserve index space: {}", e))?;
 
-        // Embed in small batches to limit memory (64 was using 4.6GB RAM)
-        let batch_size = 8;
+        let batch_size = EMBED_BATCH_SIZE;
         let mut added = 0;
         let total = chunks.len();
 
@@ -253,6 +269,7 @@ impl DenseIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::embedding::EmbeddingModel;
 
     #[test]
     fn test_dense_index_basic() {
@@ -270,7 +287,7 @@ mod tests {
         }
 
         let mut model = EmbeddingModel::load(&model_dir).unwrap();
-        let mut index = DenseIndex::new(384).unwrap();
+        let mut index = DenseIndex::new(model.info().dimensions).unwrap();
 
         // Create test chunks
         let chunks = vec![

@@ -98,7 +98,8 @@ Snapshots are stored at `~/.qex/projects/{name}_{hash}/snapshot.json` with a met
 │       ├── tantivy/                    # BM25 index files
 │       ├── dense/                      # Vector index (optional)
 │       │   ├── dense.usearch           # HNSW index
-│       │   └── dense_mapping.json      # Chunk ID mapping
+│       │   ├── dense_mapping.json      # Chunk ID ↔ vector key mapping (atomic write)
+│       │   └── dense_meta.json         # Embedder metadata (provider, model, dimensions)
 │       ├── snapshot.json               # Merkle DAG
 │       ├── snapshot_metadata.json      # Last check timestamp
 │       └── stats.json                  # Indexing statistics

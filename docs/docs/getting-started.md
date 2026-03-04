@@ -36,8 +36,9 @@ Claude Code will now have access to `index_codebase` and `search_code` tools.
 ## How It Works
 
 ```
-Source Files → Tree-sitter → Code Chunks → BM25 Index → Search Results
-                                        ↘ Dense Index ↗ (optional)
+Source Files → Tree-sitter → Code Chunks → BM25 Index ──→ Search Results
+                                        ↘ Embedder ──→ Dense Index ↗ (optional)
+                                          (ONNX or OpenAI)
 ```
 
 1. Walk project files (respects `.gitignore`)

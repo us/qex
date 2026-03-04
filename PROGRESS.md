@@ -1,10 +1,10 @@
-# 📋 Progress Plan: Phase 5 — Polish, Bug Fixes, Optimization & Testing
+# 📋 Progress Plan: Phase 7 — İkinci Review Düzeltmeleri
 
-> Created: 2026-03-03 | Status: ✅ Complete | Completed: 14/14
+> Created: 2026-03-04 | Status: ✅ Complete | Completed: 14/14
 
 ## 🎯 Objective
-Phase 4 sonrası dense search entegrasyonundaki bug'ları düzeltmek, performansı
-optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit etmek.
+İkinci multi-perspective code review'dan çıkan consensus sorunlarını ve yüksek öncelikli bulguları düzeltmek.
+4 reviewer'ın (Architect, Hacker, Perfectionist, Pragmatist) bulgularından öncelik sırasıyla işleniyor.
 
 ## 📊 Progress Overview
 - Total tasks: 14
@@ -16,117 +16,126 @@ optimize etmek, gerçek projede end-to-end test yapmak ve tüm kodu git'e commit
 
 ## Tasks
 
-### Phase 1: Bug Fixes
+### Phase 1: Gerçek Bug'lar (🔴)
 
-- [x] **Task 1.1**: Fix incremental dense index rebuild — lost vectors bug
-  - Files: `crates/qex-core/src/index/mod.rs`
-  - Details: Incremental index'te dosya silinince `dense.clear()` tüm vektörleri siliyor ama sadece yeni chunk'ları ekliyor — değişmemiş dosyaların vektörleri kayboluyor. Fix: clear sonrası tüm proje chunk'larını yeniden embed etmek yerine, dosya bazında silme yapıp (remove_by_file) sadece değişen dosyaları yeniden embed etmek.
-  - Tests: Unit test — index 3 files, modify 1, verify all 3 files' vectors still exist
+- [x] **Task 1.1**: L2 normalize DRY ihlali — inline kopya `is_finite()` kontrolü eksik
+  - Files: `crates/qex-core/src/search/embedding.rs`
+  - Details: Inline L2 normalize kodunu `l2_normalize(pooled)` çağrısıyla değiştirildi. NaN/Inf guard artık tek noktada.
+  - Tests: ✅ `cargo test --features dense` — 48 passed
 
-- [x] **Task 1.2**: Fix compiler warning — dead code `force` field without dense
-  - Files: `crates/qex-mcp/src/tools.rs`
-  - Details: `DownloadModelParams.force` field is dead code when dense feature disabled. Add `#[allow(dead_code)]` or cfg gate.
-  - Tests: `cargo build` without dense — no warnings
+- [x] **Task 1.2**: Typed retry logic — string matching yerine `ureq::Error` varyantları
+  - Files: `crates/qex-core/src/search/openai_embedder.rs`
+  - Details: `call_api` + `call_api_once` → `call_api` + `process_response` + `is_retryable_error` + `sanitize_error`. `ureq::Error::StatusCode(code)`, `Timeout`, `ConnectionFailed`, `Io` ile typed matching. Ayrıca `sanitize_error` ile güvenli hata mesajları.
+  - Tests: ✅ `cargo test --features openai` — 50 passed
 
-- [x] **Task 1.3**: Fix dense-only search results missing from RRF output
-  - Files: `crates/qex-core/src/index/mod.rs`
-  - Details: Hybrid search'te dense-only sonuçlar (BM25'te olmayan) RRF'te chunk_id ile map'lenemiyor çünkü BM25 map'inde yoklar. Dense-only sonuçları BM25'ten ayrıca çekmek lazım.
-  - Tests: Verify dense-only results appear in hybrid output
-
-### Phase 2: Performance Optimization
-
-- [x] **Task 2.1**: Optimize embedding threading
+- [x] **Task 1.3**: `to_str().unwrap()` → proper error handling
   - Files: `crates/qex-core/src/search/dense.rs`
-  - Details: add_chunks batch_size=32 ile sıralı çalışıyor. Multiple batches'ı parallel embed et (model thread-safe değil, ama batch'ler arası IO wait'i overlap edebiliriz). Alternatif: ort intra_threads'i 4'ten optimize et.
-  - Tests: Benchmark — 397 chunk embedding time before/after
+  - Details: Satır 61 ve 106'daki `to_str().unwrap()` → `.context("Dense index path contains non-UTF-8 characters")?`
+  - Tests: ✅ `cargo test --features dense` — 48 passed
 
-- [x] **Task 2.2**: Skip re-embedding unchanged chunks on full_index (SKIPPED — low priority, ~20s acceptable for 400 chunks)
+### Phase 2: Güvenlik (🔴)
+
+- [x] **Task 2.1**: Base URL şema doğrulaması (SSRF koruması)
+  - Files: `crates/qex-core/src/search/openai_embedder.rs`
+  - Details: `validate_base_url()` metodu eklendi. Sadece `https://` veya `http://localhost|127.0.0.1|[::1]` kabul ediyor. IPv6 bracket syntax destekleniyor. 4 yeni test eklendi.
+  - Tests: ✅ `cargo test --features openai` — 50 passed
+
+- [x] **Task 2.2**: API key sanitizasyonunu güçlendir
+  - Files: `crates/qex-core/src/search/openai_embedder.rs`
+  - Details: Task 1.2'de çözüldü. `sanitize_error()` metodu: typed matching ile güvenli mesajlar. `sk-` pattern'i de kontrol ediliyor.
+  - Tests: ✅ `cargo test --features openai` — 50 passed
+
+### Phase 3: Robustness (🟡)
+
+- [x] **Task 3.1**: `encode()` — `unwrap()` → `.context()?`
+  - Files: `crates/qex-core/src/search/embedding.rs`
+  - Details: `unwrap()` → `.context("ONNX model returned empty results for single text")`
+  - Tests: ✅ `cargo test --features dense` — 48 passed
+
+- [x] **Task 3.2**: Tüm embedding'lerin boyut doğrulaması
+  - Files: `crates/qex-core/src/search/openai_embedder.rs`
+  - Details: Task 1.2'de çözüldü. `process_response()` tüm `data` elemanlarını `for item in &data` ile doğruluyor.
+  - Tests: ✅ `cargo test --features openai` — 50 passed
+
+- [x] **Task 3.3**: Atomic write pattern — dense index save
+  - Files: `crates/qex-core/src/search/dense.rs`
+  - Details: `dense_mapping.json` → `dense_mapping.json.tmp` + `rename` pattern.
+  - Tests: ✅ `cargo test --features dense` — 48 passed
+
+- [x] **Task 3.4**: Corrupt mapping dosyasında açık hata
+  - Files: `crates/qex-core/src/search/dense.rs`
+  - Details: Her iki format da parse edilemezse `bail!("Failed to parse dense_mapping.json")` fırlatılıyor.
+  - Tests: ✅ `cargo test --features dense` — 48 passed
+
+- [x] **Task 3.5**: `max_len == 0` guard ekle
+  - Files: `crates/qex-core/src/search/embedding.rs`
+  - Details: `max_len == 0` durumunda zero vector döndürüyor, `j.min(max_len - 1)` underflow önleniyor.
+  - Tests: ✅ `cargo test --features dense` — 48 passed
+
+### Phase 4: Code Quality (🟡/🔵)
+
+- [x] **Task 4.1**: Hybrid search'ü ayrı metoda çıkar
   - Files: `crates/qex-core/src/index/mod.rs`
-  - Details: full_index force=true ile bile, eğer dense index mevcutsa ve chunk_id'ler aynıysa, embed'i skip et. chunk_id hash'i content'e bağlı olduğundan güvenli.
-  - Tests: full_index twice — second should be much faster
+  - Details: `try_hybrid_search()` metodu eklendi. 5 seviye iç içe `if let` → flat early-return. Her hata `warn!` ile loglanıyor.
+  - Tests: ✅ `cargo test --features dense` — 48 passed
 
-- [x] **Task 2.3**: Reduce binary size (SKIPPED — strip=true already in profile, 36MB acceptable)
-  - Files: `Cargo.toml`
-  - Details: Release profile'da `strip = true` zaten var. ort'un download ettiği dylib'leri kontrol et. ORT_DYLIB_PATH ile shared lib kullanma seçeneği araştır.
-  - Tests: `ls -lh target/release/qex`
+- [x] **Task 4.2**: Magic numbers → named constants
+  - Files: `embedding.rs`, `dense.rs`, `openai_embedder.rs`
+  - Details: `384` → `ARCTIC_EMBED_S_DIMENSIONS`, `8` → `EMBED_BATCH_SIZE`, `1536` tekrarı → `DEFAULT_DIMENSIONS`.
+  - Tests: ✅ `cargo test --features "dense,openai"` — 55 passed
 
-### Phase 3: End-to-End Testing on Real Projects
+### Phase 5: Testing & Verification
 
-- [x] **Task 3.1**: Clone FastAPI and test hybrid search
-  - Details: `git clone https://github.com/tiangolo/fastapi /tmp/fastapi-test`. Index with dense. Test problem queries: "OpenAPI schema generation", "Starlette integration", "dependency injection container", "middleware authentication"
-  - Tests: Compare BM25-only vs hybrid results for each query
+- [x] **Test 5.1**: Tüm feature kombinasyonlarında test + build
+  - `cargo test` → 41 passed ✅
+  - `cargo test --features dense` → 48 passed ✅
+  - `cargo test --features openai` → 50 passed ✅
+  - `cargo test --features "dense,openai"` → 55 passed ✅
+  - `cargo build --release --features "dense,openai"` → ✅
 
-- [x] **Task 3.2**: Test on qex itself — semantic queries (tested in Phase 4, "embedding model" query found correct files)
-  - Details: Test queries that require semantic understanding: "how does the system detect file changes", "what handles tokenization", "cosine similarity search"
-  - Tests: Verify results are semantically relevant, not just keyword matches
-
-- [x] **Task 3.3**: Test edge cases (empty query, special chars, unicode, long query — all pass, fixed special char crash)
-  - Details: Empty query, very long query (>512 tokens), special chars, Unicode, single-file project, 0-result queries
-  - Tests: No crashes, graceful error handling
-
-### Phase 4: Code Quality & Git
-
-- [x] **Task 4.1**: Add .gitignore entries for runtime files
-  - Files: `.gitignore`
-  - Details: Add entries for `.qex/`, `*.onnx`, IDE files, `.env`
-  - Tests: `git status` shows clean set of files
-
-- [x] **Task 4.2**: Update .claude/CLAUDE.md with dense search info
-  - Files: `.claude/CLAUDE.md`
-  - Details: Document dense feature flag, model download, hybrid search behavior
-  - Tests: N/A
-
-- [x] **Task 4.3**: Initial git commit (43 files, 9491 lines)
-  - Details: Stage all source files, create initial commit with full project
-  - Tests: `git log` shows commit, `git status` clean
-
-### Phase 5: Verification
-
-- [x] **Task 5.1**: Full test suite — both modes (46 dense + 41 BM25-only, 0 warnings)
-  - Tests: `cargo test` (41 pass), `cargo test --features dense` (46 pass), zero warnings
-
-- [x] **Task 5.2**: Release build verification (36MB dense, 19MB BM25-only, MCP server works)
-  - Tests: `cargo build --release --features dense`, binary size check, MCP server starts
+- [x] **Test 5.2**: PROGRESS.md'yi tamamla
+  - Details: Tüm sayaçlar güncellendi, completion summary yazıldı.
 
 ---
 
 ## 📝 Notes & Decisions
 | # | Note | Date |
 |---|------|------|
-| 1 | Dense incremental index bug: clear() lost all vectors, fixed with per-file removal | 2026-03-03 |
-| 2 | sanitize_query now whitelist-based (alphanumeric + _-./:) instead of blacklist | 2026-03-03 |
-| 3 | Query parse errors now return empty results instead of crashing | 2026-03-03 |
-| 4 | FastAPI test: 22K chunks indexed, "dependency injection" found semantic matches via dense | 2026-03-03 |
-| 5 | Test files still dominate results on large projects — test penalty 0.7 may need tuning | 2026-03-03 |
+| 1 | ureq 3: `Error::StatusCode(u16)`, `Timeout(TimeoutKind)`, `ConnectionFailed`, `Io(io::Error)` varyantları ile typed matching yapıldı. | 2026-03-04 |
+| 2 | `thread::sleep` blocking async sorunu deferred — qex-core tamamen sync, MCP layer async. Daha büyük refactor gerektirir. | 2026-03-04 |
+| 3 | Embedder caching deferred — `IncrementalIndexer`'a `OnceLock` eklemek `&mut self` gerektiren `Embedder` trait'i ile uyumsuz (`Mutex` lazım). | 2026-03-04 |
+| 4 | `call_api_once` kaldırıldı. Yeni yapı: `call_api` (retry loop + `ureq::Error` match) → `process_response` (JSON parse + validation). | 2026-03-04 |
+| 5 | IPv6 loopback URL'lerde bracket syntax: `http://[::1]:8080` — host parse'da `[` prefix kontrolü eklendi. | 2026-03-04 |
 
 ## 🐛 Issues Encountered
 | # | Issue | Status | Resolution |
 |---|-------|--------|------------|
-| - | - | - | - |
+| 1 | `ARCTIC_EMBED_S_DIMENSIONS as u64` — shape `Vec<i64>` kullanıyor | ✅ Fixed | `as i64` kullanıldı |
+| 2 | IPv6 `[::1]:8080` URL parse — `split(':')` yanlış sonuç veriyor | ✅ Fixed | `starts_with('[')` kontrolü + `split(']')` kullanıldı |
 
 ## ➕ Added Tasks (discovered during execution)
-- Fixed special character query crash (discovered during edge case testing)
+- None
 
 ---
 
 ## ✅ Completion Summary
-- **Started**: 2026-03-03
-- **Completed**: 2026-03-03
+- **Started**: 2026-03-04
+- **Completed**: 2026-03-04
 - **Total tasks**: 14 (14 original + 0 added)
-- **Issues encountered**: 1 (special char query crash → fixed)
-- **Tests passing**: ✅ All (46 dense, 41 BM25-only, 0 warnings)
+- **Issues encountered**: 2 (both resolved)
+- **Tests passing**: ✅ All (41 base, 48 dense, 50 openai, 55 both)
 
 ### Key Changes Made
-1. `dense.rs`: Added file_to_chunks mapping for per-file vector removal + backward-compatible serialization
-2. `index/mod.rs`: Fixed incremental dense rebuild (remove_file instead of clear), added dense-only BM25 lookup
-3. `bm25.rs`: Added get_by_chunk_ids(), improved sanitize_query (whitelist-based), graceful query parse errors
-4. `tools.rs`: Added #[allow(dead_code)] for DownloadModelParams
-5. `embedding.rs`: Dynamic thread count via available_parallelism()
-6. `dense.rs`: Increased batch size 32→64
-7. `.gitignore`: Added IDE, runtime, model, env entries
-8. `.claude/CLAUDE.md`: Documented dense search feature, deps, conventions
+1. `embedding.rs`: Inline L2 normalize → `l2_normalize()` çağrısı (NaN guard fix), `encode()` unwrap kaldırıldı, `max_len == 0` guard, `ARCTIC_EMBED_S_DIMENSIONS` sabiti
+2. `openai_embedder.rs`: Typed retry (`ureq::Error` matching), `sanitize_error()`, `validate_base_url()` (SSRF), `process_response()` ile tüm boyut doğrulaması, `DEFAULT_DIMENSIONS` kullanımı, 4 yeni test
+3. `dense.rs`: `to_str().unwrap()` → `.context()`, atomic write (tmp+rename), corrupt mapping `bail!`, `EMBED_BATCH_SIZE` sabiti
+4. `index/mod.rs`: `try_hybrid_search()` metodu (flat early-return + `warn!` logging)
 
-### Remaining TODOs
-- [ ] Test penalty tuning for large projects (0.7 → 0.4 for tests/)
-- [ ] Investigate ort CoreML backend for Apple Silicon acceleration
-- [ ] Profile embedding bottleneck (tokenization vs inference vs mean pooling)
+### Remaining TODOs (deferred — low priority)
+- [ ] Embedder caching in `IncrementalIndexer` (OnceLock + Mutex pattern)
+- [ ] `thread::sleep` → async-aware sleep (requires sync/async boundary redesign)
+- [ ] `EmbeddingRequest.dimensions` field for OpenAI API
+- [ ] Default provider based on enabled features (`cfg!(feature = "dense")`)
+- [ ] ONNX model dimension runtime validation (hardcoded 384)
+- [ ] `auto_index` MerkleDAG double-build optimization
+- [ ] HTTP response body size limit (`with_max_size`)

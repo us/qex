@@ -54,13 +54,26 @@ The query is applied as a disjunction across all boosted fields. Tantivy handles
 
 ## 3. Dense Vector Search (Optional)
 
-Requires the `dense` feature flag and the Arctic Embed S model.
+Requires the `dense` feature flag and an embedding backend.
 
-**Embedding** — Queries and chunks are embedded into 384-dimensional vectors using the ONNX Runtime. Chunks are batched (64 per batch) during indexing.
+**Pluggable Embedder** — The `Embedder` trait abstracts over embedding backends. Two implementations are available:
+
+| Backend | Feature Flag | Dimensions | Latency | Dependencies |
+|---------|-------------|-----------|---------|--------------|
+| ONNX Runtime (snowflake-arctic-embed-s) | `dense` | 384 | ~15ms/batch | Local, zero cloud |
+| OpenAI API (text-embedding-3-small) | `dense,openai` | 1536 | ~200ms/batch | Requires API key |
+
+The backend is selected via `QEX_EMBEDDING_PROVIDER` env var (`onnx` or `openai`).
+
+**Embedding** — Queries and chunks are embedded into dense vectors via the active backend. Chunks are batched (8 per batch for ONNX, 100 per batch for OpenAI) during indexing. All vectors are L2-normalized to unit length.
 
 **HNSW Index** — usearch builds an approximate nearest neighbor index. Cosine similarity is used for retrieval.
 
-**Model** — Snowflake Arctic Embed S (33 MB, INT8 quantized). Stored at `~/.qex/models/arctic-embed-s/`.
+**Dimension Guard** — When the embedding provider or model changes, `dense_meta.json` detects the mismatch and triggers a full re-index to prevent mixing vectors from different embedding spaces.
+
+**Model (ONNX)** — Snowflake Arctic Embed S (33 MB, INT8 quantized). Stored at `~/.qex/models/arctic-embed-s/`.
+
+**API (OpenAI)** — Synchronous HTTP via ureq with configurable timeouts (connect: 10s, response: 60s), SSRF protection, API key sanitization, and typed exponential backoff retry (429/5xx/timeout).
 
 ## 4. Reciprocal Rank Fusion
 

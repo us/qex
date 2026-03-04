@@ -37,6 +37,9 @@ ndarray = "0.17"
 usearch = "2.24"
 tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
 
+# HTTP (sync)
+ureq = { version = "3", features = ["json"] }
+
 # Utilities
 regex = "1"
 chrono = { version = "0.4", features = ["serde"] }

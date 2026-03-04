@@ -20,8 +20,6 @@ use tracing::{debug, info, warn};
 #[cfg(feature = "dense")]
 use crate::search::dense::DenseIndex;
 #[cfg(feature = "dense")]
-use crate::search::embedding::EmbeddingModel;
-#[cfg(feature = "dense")]
 use crate::search::hybrid::reciprocal_rank_fusion;
 #[cfg(feature = "dense")]
 use std::collections::HashMap;
@@ -142,14 +140,16 @@ impl IncrementalIndexer {
         let chunk_count = bm25.add_chunks(&all_chunks)
             .context("Failed to add chunks to BM25 index")?;
 
-        // Dense vector indexing (if model available)
+        // Dense vector indexing (if embedder available)
         #[cfg(feature = "dense")]
         {
-            if let Ok(mut model) = Self::load_embedding_model() {
+            if let Ok(mut embedder) = Self::load_embedder() {
                 info!("Dense search enabled — embedding {} chunks", all_chunks.len());
-                let mut dense = DenseIndex::new(model.dimensions())?;
-                dense.add_chunks(&all_chunks, &mut model)?;
+                let dims = embedder.info().dimensions;
+                let mut dense = DenseIndex::new(dims)?;
+                dense.add_chunks(&all_chunks, embedder.as_mut())?;
                 dense.save(&storage.dense_dir())?;
+                Self::save_dense_meta(&storage, &embedder.info())?;
                 info!("Dense index saved: {} vectors", dense.len());
             }
         }
@@ -272,13 +272,22 @@ impl IncrementalIndexer {
 
         let chunk_count = bm25.add_chunks(&all_chunks)?;
 
-        // Dense vector indexing (if model available)
+        // Dense vector indexing (if embedder available)
         #[cfg(feature = "dense")]
         {
-            if let Ok(mut model) = Self::load_embedding_model() {
-                let dims = model.dimensions();
-                let mut dense = DenseIndex::open(&storage.dense_dir(), dims)
-                    .unwrap_or_else(|_| DenseIndex::new(dims).unwrap());
+            if let Ok(mut embedder) = Self::load_embedder() {
+                let info = embedder.info();
+                let dims = info.dimensions;
+
+                // Check for dimension mismatch with existing index
+                let mut dense = match Self::check_dense_meta(&storage, &info) {
+                    Ok(()) => DenseIndex::open(&storage.dense_dir(), dims)
+                        .or_else(|_| DenseIndex::new(dims))?,
+                    Err(e) => {
+                        warn!("Dense index mismatch: {}. Rebuilding.", e);
+                        DenseIndex::new(dims)?
+                    }
+                };
 
                 // Remove vectors for deleted/modified files (preserves unchanged files)
                 for rel_path in &files_to_remove {
@@ -287,9 +296,10 @@ impl IncrementalIndexer {
                 }
 
                 if !all_chunks.is_empty() {
-                    dense.add_chunks(&all_chunks, &mut model)?;
+                    dense.add_chunks(&all_chunks, embedder.as_mut())?;
                 }
                 dense.save(&storage.dense_dir())?;
+                Self::save_dense_meta(&storage, &info)?;
                 debug!("Dense index updated: {} vectors", dense.len());
             }
         }
@@ -400,48 +410,8 @@ impl IncrementalIndexer {
         // Hybrid search: combine BM25 + dense results if available
         #[cfg(feature = "dense")]
         {
-            let dense_dir = storage.dense_dir();
-            if dense_dir.join("dense.usearch").exists() {
-                if let Ok(mut model) = Self::load_embedding_model() {
-                    let dims = model.dimensions();
-                    if let Ok(dense) = DenseIndex::open(&dense_dir, dims) {
-                        if !dense.is_empty() {
-                            if let Ok(query_vec) = model.encode_query(query) {
-                                let dense_k = (limit * 3).max(20);
-                                if let Ok(dense_matches) = dense.search(&query_vec, dense_k) {
-                                    // Build lookup map from BM25 results
-                                    let mut full_map: HashMap<String, SearchResult> = results
-                                        .iter()
-                                        .map(|r| (r.chunk_id.clone(), r.clone()))
-                                        .collect();
-
-                                    // Fetch dense-only results from BM25 by chunk_id
-                                    let missing_ids: Vec<&str> = dense_matches.iter()
-                                        .filter(|(cid, _)| !full_map.contains_key(cid))
-                                        .map(|(cid, _)| cid.as_str())
-                                        .collect();
-                                    if !missing_ids.is_empty() {
-                                        if let Ok(extra) = bm25.get_by_chunk_ids(&missing_ids) {
-                                            full_map.extend(extra);
-                                        }
-                                    }
-
-                                    results = reciprocal_rank_fusion(
-                                        &results,
-                                        &dense_matches,
-                                        &full_map,
-                                    );
-                                    debug!(
-                                        "Hybrid search: BM25={} dense={} fused={}",
-                                        full_map.len(),
-                                        dense_matches.len(),
-                                        results.len()
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
+            if let Some(fused) = Self::try_hybrid_search(&storage, &bm25, &results, query, limit) {
+                results = fused;
             }
         }
 
@@ -497,13 +467,131 @@ impl IncrementalIndexer {
 }
 
 impl IncrementalIndexer {
+    /// Attempt hybrid BM25 + dense vector search.
+    /// Returns fused results on success, None on any failure (graceful fallback to BM25-only).
     #[cfg(feature = "dense")]
-    fn load_embedding_model() -> Result<EmbeddingModel> {
-        let model_dir = EmbeddingModel::default_model_dir()?;
-        if !EmbeddingModel::is_available() {
-            anyhow::bail!("Embedding model not downloaded. Run scripts/download-model.sh");
+    fn try_hybrid_search(
+        storage: &ProjectStorage,
+        bm25: &BM25Index,
+        bm25_results: &[SearchResult],
+        query: &str,
+        limit: usize,
+    ) -> Option<Vec<SearchResult>> {
+        let dense_dir = storage.dense_dir();
+        if !dense_dir.join("dense.usearch").exists() {
+            return None;
         }
-        EmbeddingModel::load(&model_dir)
+
+        let mut embedder = match Self::load_embedder() {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Failed to load embedder for hybrid search: {}", e);
+                return None;
+            }
+        };
+
+        let dims = embedder.info().dimensions;
+        let dense = match DenseIndex::open(&dense_dir, dims) {
+            Ok(d) => d,
+            Err(e) => {
+                warn!("Failed to open dense index: {}", e);
+                return None;
+            }
+        };
+
+        if dense.is_empty() {
+            return None;
+        }
+
+        let query_vec = match embedder.encode_query(query) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("Failed to encode query for dense search: {}", e);
+                return None;
+            }
+        };
+
+        let dense_k = (limit * 3).max(20);
+        let dense_matches = match dense.search(&query_vec, dense_k) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!("Dense search failed: {}", e);
+                return None;
+            }
+        };
+
+        // Build lookup map from BM25 results
+        let mut full_map: HashMap<String, SearchResult> = bm25_results
+            .iter()
+            .map(|r| (r.chunk_id.clone(), r.clone()))
+            .collect();
+
+        // Fetch dense-only results from BM25 by chunk_id
+        let missing_ids: Vec<&str> = dense_matches
+            .iter()
+            .filter(|(cid, _)| !full_map.contains_key(cid))
+            .map(|(cid, _)| cid.as_str())
+            .collect();
+        if !missing_ids.is_empty() {
+            if let Ok(extra) = bm25.get_by_chunk_ids(&missing_ids) {
+                full_map.extend(extra);
+            }
+        }
+
+        let fused = reciprocal_rank_fusion(bm25_results, &dense_matches, &full_map);
+        debug!(
+            "Hybrid search: BM25={} dense={} fused={}",
+            full_map.len(),
+            dense_matches.len(),
+            fused.len()
+        );
+
+        Some(fused)
+    }
+
+    #[cfg(feature = "dense")]
+    fn load_embedder() -> Result<Box<dyn crate::search::embedding::Embedder>> {
+        crate::search::embedding::load_embedder()
+    }
+
+    #[cfg(feature = "dense")]
+    fn save_dense_meta(
+        storage: &ProjectStorage,
+        info: &crate::search::embedding::EmbedderInfo,
+    ) -> Result<()> {
+        let meta_path = storage.dense_dir().join("dense_meta.json");
+        std::fs::create_dir_all(storage.dense_dir())?;
+        let json = serde_json::to_string(info)?;
+        std::fs::write(&meta_path, json)?;
+        Ok(())
+    }
+
+    #[cfg(feature = "dense")]
+    fn check_dense_meta(
+        storage: &ProjectStorage,
+        current: &crate::search::embedding::EmbedderInfo,
+    ) -> Result<()> {
+        let meta_path = storage.dense_dir().join("dense_meta.json");
+        if !meta_path.exists() {
+            return Ok(());
+        }
+        let data = std::fs::read_to_string(&meta_path)?;
+        let saved: crate::search::embedding::EmbedderInfo = serde_json::from_str(&data)?;
+        if saved.dimensions != current.dimensions
+            || saved.provider != current.provider
+            || saved.model_name != current.model_name
+        {
+            anyhow::bail!(
+                "Embedder mismatch: index built with {} / {} ({}d), current is {} / {} ({}d). Re-index required.",
+                saved.provider,
+                saved.model_name,
+                saved.dimensions,
+                current.provider,
+                current.model_name,
+                current.dimensions,
+            );
+        }
+        Ok(())
     }
 }
 

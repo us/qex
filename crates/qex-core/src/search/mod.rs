@@ -1,10 +1,12 @@
 pub mod bm25;
 #[cfg(feature = "dense")]
 pub mod dense;
-#[cfg(feature = "dense")]
+#[cfg(any(feature = "dense", feature = "openai"))]
 pub mod embedding;
 #[cfg(feature = "dense")]
 pub mod hybrid;
+#[cfg(feature = "openai")]
+pub mod openai_embedder;
 pub mod query;
 pub mod ranking;
 

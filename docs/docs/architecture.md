@@ -78,9 +78,10 @@ Each chunk (`CodeChunk`) contains:
 Dual-engine architecture with fusion and re-ranking.
 
 - `bm25.rs` — Tantivy BM25 index with 14-field schema and field-level boosts
-- `dense.rs` — usearch HNSW vector index (optional, `dense` feature)
-- `embedding.rs` — ONNX Runtime embedding model (optional)
-- `hybrid.rs` — Reciprocal Rank Fusion to merge BM25 + dense results
+- `dense.rs` — usearch HNSW vector index (feature: `dense`). Accepts `&mut dyn Embedder` for provider-agnostic embedding
+- `embedding.rs` — `Embedder` trait definition, `EmbedderInfo` metadata, `load_embedder()` factory, ONNX `EmbeddingModel` backend (feature: `dense|openai`)
+- `openai_embedder.rs` — OpenAI API embedding backend with retry, timeout, SSRF protection, API key sanitization (feature: `openai`)
+- `hybrid.rs` — Reciprocal Rank Fusion to merge BM25 + dense results (feature: `dense`)
 - `ranking.rs` — Multi-factor re-ranking (file type, chunk type, name match, path, tags, complexity)
 - `query.rs` — Query analysis (tokenization, intent detection, synonym expansion, stop-word removal)
 
